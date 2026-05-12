@@ -10,30 +10,23 @@ import pytesseract
 API_KEY = st.secrets["ZHIPU_API_KEY"]
 API_URL = "https://open.bigmodel.cn/api/paas/v4/chat/completions"
 
-st.set_page_config(page_title="智盾·天机教学提炼系统", layout="wide")
+st.set_page_config(page_title="智盾·天机教学提炼系统", layout="centered")
 
-# ================= 手机端 App 沉浸式 UI 与底层伪装载荷 (护眼明亮版) =================
+# ================= 手机端 App 沉浸式 UI (视口修复版) =================
 st.markdown("""
-<meta name="google" content="notranslate">
-
-<meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="default">
-<meta name="mobile-web-app-capable" content="yes">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-
 <style>
-    /* 全局明亮护眼背景，符合教育软件规范 */
+    /* 全局明亮护眼背景 */
     .stApp { background-color: #F8F9FA; color: #212529; }
     
-    /* 强行抹除网页端特有的宽边距，100% 贴合手机屏幕边缘 */
-    .block-container { padding: 1rem 0.5rem !important; max-width: 100vw; }
+    /* 恢复正常的安全边距，解除 100vw 的死锁，允许手机端内容自动换行放大 */
+    .block-container { padding: 2rem 1rem !important; }
     
     /* 彻底隐藏 Streamlit 默认的导航栏、页脚菜单 */
     header { visibility: hidden !important; }
     footer { visibility: hidden !important; }
     [data-testid="stToolbar"] { visibility: hidden !important; }
     
-    /* 按钮 UI 优化：高辨识度教育蓝，增大防误触面积 */
+    /* 按钮 UI 优化：高辨识度教育蓝，恢复正常的触控物理面积 */
     .stButton button { 
         width: 100%; 
         height: 50px; 
@@ -46,7 +39,7 @@ st.markdown("""
         box-shadow: 0 4px 6px rgba(0,0,0,0.1);
     }
     
-    /* 文本输入框亮色适配，强制禁用 iOS 自动放大缩放 */
+    /* 输入框防缩放处理 */
     .stTextArea textarea { 
         font-size: 16px !important; 
         background-color: #FFFFFF !important;
@@ -55,14 +48,13 @@ st.markdown("""
         border-radius: 8px;
     }
     
-    /* 覆盖 Streamlit 默认的深色组件背景 */
+    /* 附件上传框优化 */
     [data-testid="stFileUploader"] {
         background-color: #FFFFFF;
         border: 1px dashed #0056B3;
         border-radius: 8px;
     }
     
-    /* 隐藏手机自带的滚动条，强化沉浸感 */
     ::-webkit-scrollbar { display: none; }
 </style>
 """, unsafe_allow_html=True)
