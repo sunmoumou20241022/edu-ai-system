@@ -9,7 +9,7 @@ import pytesseract
 pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
 
 # ================= 配置区 =================
-API_KEY = "1272e57f65d146b3987fe2cd45469211.kiqJXyT37dqmeDiQ"
+API_KEY = st.secrets["ZHIPU_API_KEY"]
 API_URL = "https://open.bigmodel.cn/api/paas/v4/chat/completions"
 
 st.set_page_config(page_title="智盾·天机教学提炼系统", layout="wide")
@@ -171,8 +171,35 @@ with col4:
         else:
             st.error("请先完成步骤1。")
 
-# 阶段三：输出 (此处省略 Word 下载逻辑，已在上一版中实现)
+# ================= 阶段三：成品输出与 Word 下载 =================
+output_placeholder = st.empty()
 if st.session_state.generated_exercises:
-    st.divider()
-    st.subheader("成品输出")
-    st.markdown(st.session_state.generated_exercises)
+    with output_placeholder.container():
+        st.divider()
+        st.subheader("Step 3: 最终教学讲义与习题卷")
+        
+        # 将生成的文本实时转换为 Word 文档流
+        def create_word_docx(text):
+            doc = Document()
+            doc.add_heading('智能教学讲义与习题卷', level=1)
+            for line in text.split('\n'):
+                # 简单过滤可能残留的markdown符号
+                clean_line = line.replace('**', '').replace('##', '')
+                doc.add_paragraph(clean_line)
+            bio = io.BytesIO()
+            doc.save(bio)
+            return bio.getvalue()
+
+        docx_file = create_word_docx(st.session_state.generated_exercises)
+        
+        # 放置醒目的下载按钮
+        st.download_button(
+            label="📄 一键下载为 Word 文档 (.docx) 方便打印",
+            data=docx_file,
+            file_name="教学讲义与习题卷.docx",
+            mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            use_container_width=True,
+            type="primary"
+        )
+        
+        st.markdown(st.session_state.generated_exercises)
