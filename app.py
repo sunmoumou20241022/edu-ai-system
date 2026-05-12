@@ -6,7 +6,6 @@ from docx import Document
 from PIL import Image
 import pytesseract
 # 强制指定底层 OCR 引擎的绝对路径（请根据你实际安装的位置进行修改）
-pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
 
 # ================= 配置区 =================
 API_KEY = st.secrets["ZHIPU_API_KEY"]
