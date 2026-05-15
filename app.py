@@ -59,9 +59,7 @@ def extract_text_from_docx(file):
         return f"\n[文档 {file.name} 解析失败: {str(e)}]\n"
 
 def extract_text_from_image(file):
-    """【技术升级】：使用 GLM-4V 多模态视觉大模型替代传统的 Tesseract OCR"""
     try:
-        # 1. 压缩图片并转为 Base64，防止图片过大导致网络超时
         img = Image.open(file)
         img.thumbnail((1200, 1200), Image.Resampling.LANCZOS)
         buffered = io.BytesIO()
@@ -69,7 +67,6 @@ def extract_text_from_image(file):
         img.save(buffered, format="JPEG", quality=85)
         base64_image = base64.b64encode(buffered.getvalue()).decode('utf-8')
         
-        # 2. 调用智谱的 glm-4v 视觉大模型接口
         headers = {"Authorization": f"Bearer {API_KEY}", "Content-Type": "application/json"}
         data = {
             "model": "glm-4v", 
@@ -77,13 +74,12 @@ def extract_text_from_image(file):
                 {
                     "role": "user",
                     "content": [
-                        {"type": "text", "text": "你是一个高精度的文字提取AI。请提取这张图片中的所有教学文字内容。只输出文字，绝对不要输出任何多余的解释或问候语。"},
+                        {"type": "text", "text": "你是一个高精度的文字提取AI。请提取这张图片中的所有教学文字内容。只输出文字，绝对不要输出任何多余的解释。"},
                         {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"}}
                     ]
                 }
             ]
         }
-        # 设置超时时间为30秒，彻底杜绝无限卡死
         response = requests.post(API_URL, headers=headers, json=data, timeout=30)
         return response.json()['choices'][0]['message']['content']
     except Exception as e:
@@ -243,7 +239,7 @@ with col1:
                 status_text = st.empty()
                 
                 for i, file in enumerate(uploaded_files):
-                    status_text.text(f" 正在调用视觉大模型深度解析第 {i+1}/{len(uploaded_files)} 个文件...")
+                    status_text.text(f"⏳ 正在调用视觉大模型深度解析第 {i+1}/{len(uploaded_files)} 个文件...")
                     
                     if file.name.endswith('.docx'):
                         temp_parsed += extract_text_from_docx(file) + "\n\n"
@@ -267,13 +263,18 @@ with col1:
     with tab2:
         manual_text = st.text_area("此处输入文本：", height=150)
     
-    final_source = st.session_state.parsed_text_cache if uploaded_files else manual_text
+    # 【核心修复】：海纳百川的多模态合并逻辑
+    final_source = ""
+    if uploaded_files and st.session_state.parsed_text_cache:
+        final_source += st.session_state.parsed_text_cache + "\n\n"
+    if manual_text.strip():
+        final_source += manual_text.strip()
 
 with col2:
     st.info(" **系统提示**：AI将智能剥离冗余信息，提取核心考点。")
     if st.button("一键提取核心重难点", type="primary"):
         if len(final_source.strip()) < 15:
-            st.error("有效文本不足 15 字符。请检查图片中是否有清晰的文字，或尝试手动粘贴。")
+            st.error("有效文本不足 15 字符。请检查是否成功上传图片，或在手动粘贴处输入内容。")
         else:
             with st.spinner("AI 正在萃取知识骨架..."):
                 sys_prompt_step1 = """你是一名特级教师。提取核心概念、教学难点、考点预测。必须输出纯文本格式，禁用Markdown符号。格式如：\n一、核心概念\n1. 内容\n二、教学难点..."""
@@ -287,7 +288,7 @@ st.divider()
 st.header("步骤2：混合题型组卷配置")
 edited_points = st.text_area("确认知识图谱（可修改）：", value=st.session_state.extracted_points, height=200)
 
-st.markdown("##### ⚙️ 定制试卷结构")
+st.markdown("#####  定制试卷结构")
 c_type1, c_type2, c_type3 = st.columns(3)
 with c_type1:
     count_single = st.number_input("单选题数量", min_value=0, max_value=20, value=3)
@@ -371,7 +372,7 @@ if st.session_state.quiz_data:
     st.info(" **试卷生成完毕！** 您可以直接在下方修改 AI 生成的题目，修改后将自动同步到最终导出的 Word 中。")
     
     quiz = st.session_state.quiz_data
-    quiz['title'] = st.text_input(" 试卷主标题", quiz.get('title', ''))
+    quiz['title'] = st.text_input("试卷主标题", quiz.get('title', ''))
 
     for i, q in enumerate(quiz.get('questions', [])):
         with st.expander(f"第 {i+1} 题 - {q.get('type', '')} ({q.get('score', 0)}分)", expanded=False):
