@@ -45,7 +45,6 @@ if "extracted_points" not in st.session_state:
     st.session_state.extracted_points = ""
 if "quiz_data" not in st.session_state:
     st.session_state.quiz_data = None
-# 【新增：素材解析缓存，防止改个分数就重新卡死解析图片】
 if "parsed_text_cache" not in st.session_state:
     st.session_state.parsed_text_cache = ""
 if "last_uploaded_files" not in st.session_state:
@@ -53,13 +52,22 @@ if "last_uploaded_files" not in st.session_state:
 
 # ================= 工具函数 =================
 def extract_text_from_docx(file):
-    doc = Document(file)
-    return "\n".join([para.text for para in doc.paragraphs])
+    try:
+        doc = Document(file)
+        return "\n".join([para.text for para in doc.paragraphs])
+    except Exception as e:
+        return f"\n[文档 {file.name} 解析失败: {str(e)}]\n"
 
 def extract_text_from_image(file):
-    img = Image.open(file)
-    img.thumbnail((1200, 1200), Image.Resampling.LANCZOS)
-    return pytesseract.image_to_string(img, lang='chi_sim+eng')
+    try:
+        img = Image.open(file)
+        # 极速压缩模式：适配云端服务器有限的CPU算力
+        img.thumbnail((1000, 1000), Image.Resampling.LANCZOS)
+        text = pytesseract.image_to_string(img, lang='chi_sim+eng')
+        return text
+    except Exception as e:
+        # 防崩溃防卡死
+        return f"\n[图片 {file.name} 解析失败: 请检查服务器是否安装了Tesseract环境或图片是否损坏。详细报错: {str(e)}]\n"
 
 def call_glm_api(system_prompt, user_content):
     headers = {"Authorization": f"Bearer {API_KEY}", "Content-Type": "application/json"}
@@ -206,25 +214,34 @@ with col1:
     with tab1:
         uploaded_files = st.file_uploader("上传 Word 课件或讲义照片", type=['docx', 'png', 'jpg', 'jpeg'], accept_multiple_files=True)
         
-        # 提取当前上传文件的特征指纹
         current_files_sig = "".join([f.name + str(f.size) for f in uploaded_files]) if uploaded_files else ""
         
         if uploaded_files:
-            # 【防卡死逻辑】：只有当文件真的换了，才去执行耗时的解析
             if current_files_sig != st.session_state.last_uploaded_files:
-                with st.spinner(f"正在深度解析 {len(uploaded_files)} 个文件... (仅首次上传需等待)"):
-                    temp_parsed = ""
-                    for file in uploaded_files:
-                        if file.name.endswith('.docx'):
-                            temp_parsed += extract_text_from_docx(file) + "\n\n"
-                        else:
-                            temp_parsed += extract_text_from_image(file) + "\n\n"
+                # 【防死机核心】：加入进度条与动态状态提示
+                temp_parsed = ""
+                progress_bar = st.progress(0)
+                status_text = st.empty()
+                
+                for i, file in enumerate(uploaded_files):
+                    status_text.text(f"⏳ 正在深度解析第 {i+1}/{len(uploaded_files)} 个文件: {file.name} ... (云端算力较慢，请耐心等待)")
                     
-                    st.session_state.parsed_text_cache = temp_parsed
-                    st.session_state.last_uploaded_files = current_files_sig
+                    if file.name.endswith('.docx'):
+                        temp_parsed += extract_text_from_docx(file) + "\n\n"
+                    else:
+                        temp_parsed += extract_text_from_image(file) + "\n\n"
+                        
+                    progress_bar.progress((i + 1) / len(uploaded_files))
+                
+                # 解析完成，清空进度提示，写入缓存
+                status_text.empty()
+                progress_bar.empty()
+                
+                st.session_state.parsed_text_cache = temp_parsed
+                st.session_state.last_uploaded_files = current_files_sig
             
             if len(st.session_state.parsed_text_cache.strip()) > 0:
-                st.success(f"解析成功：共 {len(st.session_state.parsed_text_cache)} 字符 (已缓存，改分不卡顿)")
+                st.success(f"解析成功：共提取 {len(st.session_state.parsed_text_cache)} 个字符 (系统已缓存)")
         else:
             st.session_state.parsed_text_cache = ""
             st.session_state.last_uploaded_files = ""
@@ -238,7 +255,7 @@ with col2:
     st.info(" **系统提示**：AI将智能剥离冗余信息，提取核心考点。")
     if st.button("一键提取核心重难点", type="primary"):
         if len(final_source.strip()) < 15:
-            st.error("有效文本不足 15 字符。")
+            st.error("有效文本不足 15 字符。若您刚上传了图片，请检查图片中是否有清晰的文字，或尝试手动粘贴。")
         else:
             with st.spinner("AI 正在萃取知识骨架..."):
                 sys_prompt_step1 = """你是一名特级教师。提取核心概念、教学难点、考点预测。必须输出纯文本格式，禁用Markdown符号。格式如：\n一、核心概念\n1. 内容\n二、教学难点..."""
@@ -252,7 +269,7 @@ st.divider()
 st.header("步骤2：混合题型组卷配置")
 edited_points = st.text_area("确认知识图谱（可修改）：", value=st.session_state.extracted_points, height=200)
 
-st.markdown("#####  定制试卷结构")
+st.markdown("##### ⚙️ 定制试卷结构")
 c_type1, c_type2, c_type3 = st.columns(3)
 with c_type1:
     count_single = st.number_input("单选题数量", min_value=0, max_value=20, value=3)
@@ -267,7 +284,6 @@ with c_type3:
 paper_title = st.text_input("试卷大标题", "智能生成课后专项练习卷")
 
 if st.button("开始生成结构化试卷", type="primary"):
-    # 清空上次生成的题目状态，确保能显示新题目
     for key in list(st.session_state.keys()):
         if key.startswith('q_') or key.startswith('opt_') or key.startswith('ans_') or key.startswith('aly_'):
             del st.session_state[key]
@@ -364,7 +380,7 @@ if st.session_state.quiz_data:
     with col_dl1:
         student_doc = generate_professional_word(st.session_state.quiz_data, version="student")
         st.download_button(
-            label=" 下载【学生版】试卷 (纯题目版)",
+            label="下载【学生版】试卷 (纯题目版)",
             data=student_doc,
             file_name=f"{quiz['title']}_学生版.docx",
             mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
