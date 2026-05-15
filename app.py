@@ -199,7 +199,7 @@ st.header("步骤1：教学素材深度剖析")
 col1, col2 = st.columns([2, 1])
 
 with col1:
-    tab1, tab2 = st.tabs(["📄 文件上传", "⌨️ 手动粘贴"])
+    tab1, tab2 = st.tabs([" 文件上传", "手动粘贴"])
     with tab1:
         uploaded_files = st.file_uploader("上传 Word 课件或讲义照片", type=['docx', 'png', 'jpg', 'jpeg'], accept_multiple_files=True)
         parsed_text = ""
@@ -251,6 +251,11 @@ with c_type3:
 paper_title = st.text_input("试卷大标题", "智能生成课后专项练习卷")
 
 if st.button("开始生成结构化试卷", type="primary"):
+    # 【核心修复】：在这里强行清空旧题目的缓存状态！
+    for key in list(st.session_state.keys()):
+        if key.startswith('q_') or key.startswith('opt_') or key.startswith('ans_') or key.startswith('aly_'):
+            del st.session_state[key]
+            
     total_q = count_single + count_fill + count_short
     if total_q == 0:
         st.warning("请至少选择一道题目生成！")
@@ -295,22 +300,18 @@ JSON 结构严格遵守以下格式：
         
         st.subheader("正在构思题目并构建数据...")
         
-        # 【新增：打字机流式输出容器】
         stream_container = st.empty()
         
         with stream_container:
-            # 这里调用打字机效果，把 AI 生成底层代码的过程展现给用户看
             stream_gen = call_glm_api_stream(sys_prompt_step2, edited_points)
             raw_json_str = st.write_stream(stream_gen)
             
-        # 打字结束，瞬间进行解析转换
         parsed_data = extract_json_from_text(raw_json_str)
         
         if parsed_data and "questions" in parsed_data:
             st.session_state.quiz_data = parsed_data
-            # 清空刚才打字的原始代码，准备展示漂亮的 UI
             stream_container.empty()
-            st.rerun()  # 触发刷新，立刻显示步骤3
+            st.rerun()  
         else:
             st.error("解析失败，大模型返回格式异常。请重试。")
 
@@ -318,7 +319,7 @@ JSON 结构严格遵守以下格式：
 if st.session_state.quiz_data:
     st.divider()
     st.header("步骤3：试卷在线预览与微调 (最核心)")
-    st.info(" **试卷生成完毕！** 您可以直接在下方修改 AI 生成的题目，修改后将自动同步到最终导出的 Word 中。")
+    st.info("**试卷生成完毕！** 您可以直接在下方修改 AI 生成的题目，修改后将自动同步到最终导出的 Word 中。")
     
     quiz = st.session_state.quiz_data
     quiz['title'] = st.text_input(" 试卷主标题", quiz.get('title', ''))
@@ -347,7 +348,7 @@ if st.session_state.quiz_data:
     with col_dl1:
         student_doc = generate_professional_word(st.session_state.quiz_data, version="student")
         st.download_button(
-            label=" 下载【学生版】试卷 (纯题目版)",
+            label="下载【学生版】试卷 (纯题目版)",
             data=student_doc,
             file_name=f"{quiz['title']}_学生版.docx",
             mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
