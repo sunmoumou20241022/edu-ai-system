@@ -11,7 +11,7 @@ import pytesseract
 
 # ================= 配置区 =================
 API_KEY = st.secrets.get("ZHIPU_API_KEY", "你的API_KEY填这里")
-API_URL = "[https://open.bigmodel.cn/api/paas/v4/chat/completions](https://open.bigmodel.cn/api/paas/v4/chat/completions)"
+API_URL = "https://open.bigmodel.cn/api/paas/v4/chat/completions"
 
 st.set_page_config(page_title="智盾·天机教学提炼系统", layout="centered")
 
