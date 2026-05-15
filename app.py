@@ -40,11 +40,16 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# 初始化 Session State
+# ================= 初始化 Session State =================
 if "extracted_points" not in st.session_state:
     st.session_state.extracted_points = ""
 if "quiz_data" not in st.session_state:
     st.session_state.quiz_data = None
+# 【新增：素材解析缓存，防止改个分数就重新卡死解析图片】
+if "parsed_text_cache" not in st.session_state:
+    st.session_state.parsed_text_cache = ""
+if "last_uploaded_files" not in st.session_state:
+    st.session_state.last_uploaded_files = ""
 
 # ================= 工具函数 =================
 def extract_text_from_docx(file):
@@ -73,7 +78,6 @@ def call_glm_api(system_prompt, user_content):
         return f"API异常: {e}"
 
 def call_glm_api_stream(system_prompt, user_content):
-    """流式调用接口，用于实现一个字一个字蹦出来的效果"""
     headers = {"Authorization": f"Bearer {API_KEY}", "Content-Type": "application/json"}
     data = {
         "model": "glm-4-flash",
@@ -98,7 +102,6 @@ def call_glm_api_stream(system_prompt, user_content):
         yield f"\n[网络流异常: {e}]"
 
 def extract_json_from_text(text):
-    """最安全的JSON提取器"""
     try:
         start_idx = text.find('{')
         end_idx = text.rfind('}')
@@ -199,24 +202,37 @@ st.header("步骤1：教学素材深度剖析")
 col1, col2 = st.columns([2, 1])
 
 with col1:
-    tab1, tab2 = st.tabs([" 文件上传", "手动粘贴"])
+    tab1, tab2 = st.tabs(["📄 文件上传", "⌨️ 手动粘贴"])
     with tab1:
         uploaded_files = st.file_uploader("上传 Word 课件或讲义照片", type=['docx', 'png', 'jpg', 'jpeg'], accept_multiple_files=True)
-        parsed_text = ""
+        
+        # 提取当前上传文件的特征指纹
+        current_files_sig = "".join([f.name + str(f.size) for f in uploaded_files]) if uploaded_files else ""
+        
         if uploaded_files:
-            with st.spinner(f"正在解析 {len(uploaded_files)} 个文件..."):
-                for file in uploaded_files:
-                    if file.name.endswith('.docx'):
-                        parsed_text += extract_text_from_docx(file) + "\n\n"
-                    else:
-                        parsed_text += extract_text_from_image(file) + "\n\n"
-            if len(parsed_text.strip()) > 0:
-                st.success(f"解析成功：共 {len(parsed_text)} 字符")
+            # 【防卡死逻辑】：只有当文件真的换了，才去执行耗时的解析
+            if current_files_sig != st.session_state.last_uploaded_files:
+                with st.spinner(f"正在深度解析 {len(uploaded_files)} 个文件... (仅首次上传需等待)"):
+                    temp_parsed = ""
+                    for file in uploaded_files:
+                        if file.name.endswith('.docx'):
+                            temp_parsed += extract_text_from_docx(file) + "\n\n"
+                        else:
+                            temp_parsed += extract_text_from_image(file) + "\n\n"
+                    
+                    st.session_state.parsed_text_cache = temp_parsed
+                    st.session_state.last_uploaded_files = current_files_sig
+            
+            if len(st.session_state.parsed_text_cache.strip()) > 0:
+                st.success(f"解析成功：共 {len(st.session_state.parsed_text_cache)} 字符 (已缓存，改分不卡顿)")
+        else:
+            st.session_state.parsed_text_cache = ""
+            st.session_state.last_uploaded_files = ""
                 
     with tab2:
         manual_text = st.text_area("此处输入文本：", height=150)
     
-    final_source = parsed_text if uploaded_files else manual_text
+    final_source = st.session_state.parsed_text_cache if uploaded_files else manual_text
 
 with col2:
     st.info(" **系统提示**：AI将智能剥离冗余信息，提取核心考点。")
@@ -251,7 +267,7 @@ with c_type3:
 paper_title = st.text_input("试卷大标题", "智能生成课后专项练习卷")
 
 if st.button("开始生成结构化试卷", type="primary"):
-    # 【核心修复】：在这里强行清空旧题目的缓存状态！
+    # 清空上次生成的题目状态，确保能显示新题目
     for key in list(st.session_state.keys()):
         if key.startswith('q_') or key.startswith('opt_') or key.startswith('ans_') or key.startswith('aly_'):
             del st.session_state[key]
@@ -319,7 +335,7 @@ JSON 结构严格遵守以下格式：
 if st.session_state.quiz_data:
     st.divider()
     st.header("步骤3：试卷在线预览与微调 (最核心)")
-    st.info("**试卷生成完毕！** 您可以直接在下方修改 AI 生成的题目，修改后将自动同步到最终导出的 Word 中。")
+    st.info(" **试卷生成完毕！** 您可以直接在下方修改 AI 生成的题目，修改后将自动同步到最终导出的 Word 中。")
     
     quiz = st.session_state.quiz_data
     quiz['title'] = st.text_input(" 试卷主标题", quiz.get('title', ''))
@@ -348,7 +364,7 @@ if st.session_state.quiz_data:
     with col_dl1:
         student_doc = generate_professional_word(st.session_state.quiz_data, version="student")
         st.download_button(
-            label="下载【学生版】试卷 (纯题目版)",
+            label=" 下载【学生版】试卷 (纯题目版)",
             data=student_doc,
             file_name=f"{quiz['title']}_学生版.docx",
             mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
