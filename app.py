@@ -2,6 +2,7 @@ import streamlit as st
 import requests
 import io
 import json
+import re
 from docx import Document
 from docx.shared import Pt, Cm, RGBColor
 from docx.enum.text import WD_ALIGN_PARAGRAPH
@@ -71,8 +72,33 @@ def call_glm_api(system_prompt, user_content):
     except Exception as e:
         return f"API异常: {e}"
 
+def call_glm_api_stream(system_prompt, user_content):
+    """流式调用接口，用于实现一个字一个字蹦出来的效果"""
+    headers = {"Authorization": f"Bearer {API_KEY}", "Content-Type": "application/json"}
+    data = {
+        "model": "glm-4-flash",
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_content}
+        ],
+        "temperature": 0.3, "max_tokens": 8192,
+        "stream": True 
+    }
+    try:
+        response = requests.post(API_URL, headers=headers, json=data, stream=True)
+        for line in response.iter_lines():
+            if line:
+                decoded_line = line.decode('utf-8')
+                if decoded_line.startswith("data: "):
+                    content = decoded_line[6:]
+                    if content == "[DONE]": break
+                    chunk = json.loads(content)
+                    yield chunk['choices'][0]['delta'].get('content', '')
+    except Exception as e:
+        yield f"\n[网络流异常: {e}]"
+
 def extract_json_from_text(text):
-    """最安全的JSON提取器：避开正则和特殊符号，防止粘贴截断"""
+    """最安全的JSON提取器"""
     try:
         start_idx = text.find('{')
         end_idx = text.rfind('}')
@@ -266,22 +292,33 @@ JSON 结构严格遵守以下格式：
     }}
   ]
 }}"""
+        
         st.subheader("正在构思题目并构建数据...")
-        with st.spinner("AI 命题组卷中，大约需要10-20秒，请稍候..."):
-            raw_json_str = call_glm_api(sys_prompt_step2, edited_points)
-            parsed_data = extract_json_from_text(raw_json_str)
+        
+        # 【新增：打字机流式输出容器】
+        stream_container = st.empty()
+        
+        with stream_container:
+            # 这里调用打字机效果，把 AI 生成底层代码的过程展现给用户看
+            stream_gen = call_glm_api_stream(sys_prompt_step2, edited_points)
+            raw_json_str = st.write_stream(stream_gen)
             
-            if parsed_data and "questions" in parsed_data:
-                st.session_state.quiz_data = parsed_data
-                st.success("✅ 试卷数据生成成功！请在下方预览微调。")
-            else:
-                st.error("解析失败，大模型返回格式异常。请重试。")
+        # 打字结束，瞬间进行解析转换
+        parsed_data = extract_json_from_text(raw_json_str)
+        
+        if parsed_data and "questions" in parsed_data:
+            st.session_state.quiz_data = parsed_data
+            # 清空刚才打字的原始代码，准备展示漂亮的 UI
+            stream_container.empty()
+            st.rerun()  # 触发刷新，立刻显示步骤3
+        else:
+            st.error("解析失败，大模型返回格式异常。请重试。")
 
 # ================= 步骤 3 & 4：微调与导出 =================
 if st.session_state.quiz_data:
     st.divider()
     st.header("步骤3：试卷在线预览与微调 (最核心)")
-    st.info("✏️ 您可以直接在下方修改 AI 生成的题目，修改后将自动同步到最终导出的 Word 中。")
+    st.info("✅ **试卷生成完毕！** 您可以直接在下方修改 AI 生成的题目，修改后将自动同步到最终导出的 Word 中。")
     
     quiz = st.session_state.quiz_data
     quiz['title'] = st.text_input("📝 试卷主标题", quiz.get('title', ''))
