@@ -219,7 +219,7 @@ with col1:
     final_source = parsed_text if uploaded_files else manual_text
 
 with col2:
-    st.info("💡 **系统提示**：AI将智能剥离冗余信息，提取核心考点。")
+    st.info(" **系统提示**：AI将智能剥离冗余信息，提取核心考点。")
     if st.button("一键提取核心重难点", type="primary"):
         if len(final_source.strip()) < 15:
             st.error("有效文本不足 15 字符。")
@@ -236,7 +236,7 @@ st.divider()
 st.header("步骤2：混合题型组卷配置")
 edited_points = st.text_area("确认知识图谱（可修改）：", value=st.session_state.extracted_points, height=200)
 
-st.markdown("##### ⚙️ 定制试卷结构")
+st.markdown("#####  定制试卷结构")
 c_type1, c_type2, c_type3 = st.columns(3)
 with c_type1:
     count_single = st.number_input("单选题数量", min_value=0, max_value=20, value=3)
@@ -318,10 +318,10 @@ JSON 结构严格遵守以下格式：
 if st.session_state.quiz_data:
     st.divider()
     st.header("步骤3：试卷在线预览与微调 (最核心)")
-    st.info("✅ **试卷生成完毕！** 您可以直接在下方修改 AI 生成的题目，修改后将自动同步到最终导出的 Word 中。")
+    st.info(" **试卷生成完毕！** 您可以直接在下方修改 AI 生成的题目，修改后将自动同步到最终导出的 Word 中。")
     
     quiz = st.session_state.quiz_data
-    quiz['title'] = st.text_input("📝 试卷主标题", quiz.get('title', ''))
+    quiz['title'] = st.text_input(" 试卷主标题", quiz.get('title', ''))
 
     for i, q in enumerate(quiz.get('questions', [])):
         with st.expander(f"第 {i+1} 题 - {q.get('type', '')} ({q.get('score', 0)}分)", expanded=False):
@@ -340,14 +340,14 @@ if st.session_state.quiz_data:
 
     st.divider()
     st.header("步骤4：双版本精美排版导出")
-    st.markdown("👇 **您可以将微调后的试卷导出为标准的教学 Word 文档。**")
+    st.markdown(" **您可以将微调后的试卷导出为标准的教学 Word 文档。**")
     
     col_dl1, col_dl2 = st.columns(2)
     
     with col_dl1:
         student_doc = generate_professional_word(st.session_state.quiz_data, version="student")
         st.download_button(
-            label="🎓 下载【学生版】试卷 (纯题目版)",
+            label=" 下载【学生版】试卷 (纯题目版)",
             data=student_doc,
             file_name=f"{quiz['title']}_学生版.docx",
             mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
@@ -358,7 +358,7 @@ if st.session_state.quiz_data:
     with col_dl2:
         teacher_doc = generate_professional_word(st.session_state.quiz_data, version="teacher")
         st.download_button(
-            label="👨‍🏫 下载【教师版】试卷 (含答案解析)",
+            label=" 下载【教师版】试卷 (含答案解析)",
             data=teacher_doc,
             file_name=f"{quiz['title']}_教师解析版.docx",
             mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
