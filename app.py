@@ -3,12 +3,12 @@ import requests
 import io
 import json
 import re
+import base64
 from docx import Document
 from docx.shared import Pt, Cm, RGBColor
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.oxml.ns import qn
 from PIL import Image
-import pytesseract
 
 # ================= 配置区 =================
 API_KEY = st.secrets.get("ZHIPU_API_KEY", "你的API_KEY填这里")
@@ -59,15 +59,35 @@ def extract_text_from_docx(file):
         return f"\n[文档 {file.name} 解析失败: {str(e)}]\n"
 
 def extract_text_from_image(file):
+    """【技术升级】：使用 GLM-4V 多模态视觉大模型替代传统的 Tesseract OCR"""
     try:
+        # 1. 压缩图片并转为 Base64，防止图片过大导致网络超时
         img = Image.open(file)
-        # 极速压缩模式：适配云端服务器有限的CPU算力
-        img.thumbnail((1000, 1000), Image.Resampling.LANCZOS)
-        text = pytesseract.image_to_string(img, lang='chi_sim+eng')
-        return text
+        img.thumbnail((1200, 1200), Image.Resampling.LANCZOS)
+        buffered = io.BytesIO()
+        img = img.convert("RGB") 
+        img.save(buffered, format="JPEG", quality=85)
+        base64_image = base64.b64encode(buffered.getvalue()).decode('utf-8')
+        
+        # 2. 调用智谱的 glm-4v 视觉大模型接口
+        headers = {"Authorization": f"Bearer {API_KEY}", "Content-Type": "application/json"}
+        data = {
+            "model": "glm-4v", 
+            "messages": [
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": "你是一个高精度的文字提取AI。请提取这张图片中的所有教学文字内容。只输出文字，绝对不要输出任何多余的解释或问候语。"},
+                        {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"}}
+                    ]
+                }
+            ]
+        }
+        # 设置超时时间为30秒，彻底杜绝无限卡死
+        response = requests.post(API_URL, headers=headers, json=data, timeout=30)
+        return response.json()['choices'][0]['message']['content']
     except Exception as e:
-        # 防崩溃防卡死
-        return f"\n[图片 {file.name} 解析失败: 请检查服务器是否安装了Tesseract环境或图片是否损坏。详细报错: {str(e)}]\n"
+        return f"\n[视觉大模型解析失败: {str(e)}]\n"
 
 def call_glm_api(system_prompt, user_content):
     headers = {"Authorization": f"Bearer {API_KEY}", "Content-Type": "application/json"}
@@ -80,7 +100,7 @@ def call_glm_api(system_prompt, user_content):
         "temperature": 0.3, "max_tokens": 4096 
     }
     try:
-        response = requests.post(API_URL, headers=headers, json=data)
+        response = requests.post(API_URL, headers=headers, json=data, timeout=40)
         return response.json()['choices'][0]['message']['content']
     except Exception as e:
         return f"API异常: {e}"
@@ -97,7 +117,7 @@ def call_glm_api_stream(system_prompt, user_content):
         "stream": True 
     }
     try:
-        response = requests.post(API_URL, headers=headers, json=data, stream=True)
+        response = requests.post(API_URL, headers=headers, json=data, stream=True, timeout=10)
         for line in response.iter_lines():
             if line:
                 decoded_line = line.decode('utf-8')
@@ -210,7 +230,7 @@ st.header("步骤1：教学素材深度剖析")
 col1, col2 = st.columns([2, 1])
 
 with col1:
-    tab1, tab2 = st.tabs(["📄 文件上传", "⌨️ 手动粘贴"])
+    tab1, tab2 = st.tabs([" 文件上传", " 手动粘贴"])
     with tab1:
         uploaded_files = st.file_uploader("上传 Word 课件或讲义照片", type=['docx', 'png', 'jpg', 'jpeg'], accept_multiple_files=True)
         
@@ -218,13 +238,12 @@ with col1:
         
         if uploaded_files:
             if current_files_sig != st.session_state.last_uploaded_files:
-                # 【防死机核心】：加入进度条与动态状态提示
                 temp_parsed = ""
                 progress_bar = st.progress(0)
                 status_text = st.empty()
                 
                 for i, file in enumerate(uploaded_files):
-                    status_text.text(f"⏳ 正在深度解析第 {i+1}/{len(uploaded_files)} 个文件: {file.name} ... (云端算力较慢，请耐心等待)")
+                    status_text.text(f" 正在调用视觉大模型深度解析第 {i+1}/{len(uploaded_files)} 个文件...")
                     
                     if file.name.endswith('.docx'):
                         temp_parsed += extract_text_from_docx(file) + "\n\n"
@@ -233,7 +252,6 @@ with col1:
                         
                     progress_bar.progress((i + 1) / len(uploaded_files))
                 
-                # 解析完成，清空进度提示，写入缓存
                 status_text.empty()
                 progress_bar.empty()
                 
@@ -241,7 +259,7 @@ with col1:
                 st.session_state.last_uploaded_files = current_files_sig
             
             if len(st.session_state.parsed_text_cache.strip()) > 0:
-                st.success(f"解析成功：共提取 {len(st.session_state.parsed_text_cache)} 个字符 (系统已缓存)")
+                st.success(f"解析成功：多模态大模型共提取 {len(st.session_state.parsed_text_cache)} 个字符")
         else:
             st.session_state.parsed_text_cache = ""
             st.session_state.last_uploaded_files = ""
@@ -255,7 +273,7 @@ with col2:
     st.info(" **系统提示**：AI将智能剥离冗余信息，提取核心考点。")
     if st.button("一键提取核心重难点", type="primary"):
         if len(final_source.strip()) < 15:
-            st.error("有效文本不足 15 字符。若您刚上传了图片，请检查图片中是否有清晰的文字，或尝试手动粘贴。")
+            st.error("有效文本不足 15 字符。请检查图片中是否有清晰的文字，或尝试手动粘贴。")
         else:
             with st.spinner("AI 正在萃取知识骨架..."):
                 sys_prompt_step1 = """你是一名特级教师。提取核心概念、教学难点、考点预测。必须输出纯文本格式，禁用Markdown符号。格式如：\n一、核心概念\n1. 内容\n二、教学难点..."""
@@ -331,7 +349,6 @@ JSON 结构严格遵守以下格式：
 }}"""
         
         st.subheader("正在构思题目并构建数据...")
-        
         stream_container = st.empty()
         
         with stream_container:
