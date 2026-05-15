@@ -11,7 +11,7 @@ from PIL import Image
 import pytesseract
 
 # ================= 配置区 =================
-API_KEY = st.secrets.get("ZHIPU_API_KEY", "你的API_KEY填这里") # 防止本地运行报错
+API_KEY = st.secrets.get("ZHIPU_API_KEY", "你的API_KEY填这里")
 API_URL = "https://open.bigmodel.cn/api/paas/v4/chat/completions"
 
 st.set_page_config(page_title="智盾·天机教学提炼系统", layout="centered")
@@ -72,33 +72,10 @@ def call_glm_api(system_prompt, user_content):
     except Exception as e:
         return f"API异常: {e}"
 
-def call_glm_api_stream(system_prompt, user_content):
-    headers = {"Authorization": f"Bearer {API_KEY}", "Content-Type": "application/json"}
-    data = {
-        "model": "glm-4-flash",
-        "messages": [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_content}
-        ],
-        "temperature": 0.3, "max_tokens": 8192,
-        "stream": True 
-    }
-    try:
-        response = requests.post(API_URL, headers=headers, json=data, stream=True)
-        for line in response.iter_lines():
-            if line:
-                decoded_line = line.decode('utf-8')
-                if decoded_line.startswith("data: "):
-                    content = decoded_line[6:]
-                    if content == "[DONE]": break
-                    chunk = json.loads(content)
-                    yield chunk['choices'][0]['delta'].get('content', '')
-    except Exception as e:
-        yield f"\n[网络流异常: {e}]"
-
 def extract_json_from_text(text):
     """鲁棒的JSON提取器"""
-    match = re.search(r'
+    # 【修复截断问题】：这里换成双引号，防止 Streamlit Web 编辑器粘贴时截断代码
+    match = re.search(r"
 http://googleusercontent.com/immersive_entry_chip/0
 
-这次直接全选覆盖后，缩进问题就会彻底消失了。之后如果再遇到类似的局部报错，记得**尽量不要一段一段地拼接代码**，直接要求输出完整版覆写最稳妥。
+这次的代码是从第 1 行到第 326 行，包含了你要求的所有核心功能（**题目在线预览与微调、教师/学生双版本导出、混合题型组卷配置**）。快去试试吧！
